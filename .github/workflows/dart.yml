@@ -1,38 +1,59 @@
-name: iOS-ipa-build
+name: Flutter iOS Build (No Codesign)
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main # Or your main development branch
+  workflow_dispatch: # Allows manual triggering of the workflow
 
 jobs:
-  build-ios:
-    name: 🎉 iOS Build
-    runs-on: macos-latest
+  build_ios:
+    runs-on: macos-latest # iOS builds require a macOS runner
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.x.x' # Specify your Flutter version, e.g., '3.19.0' or '3.x.x'
           channel: 'stable'
-          architecture: x64
-      - run: flutter pub get
 
-      - run: pod repo update
-        working-directory: ios
+      - name: Get Flutter Dependencies
+        run: flutter pub get
 
-      - run: flutter build ios --release --no-codesign
+      - name: Install CocoaPods
+        run: |
+          sudo gem install cocoapods
 
-      - run: mkdir Payload
-        working-directory: build/ios/iphoneos
+      - name: Clean Flutter Project
+        run: flutter clean
 
-      - run: mv Runner.app/ Payload
-        working-directory: build/ios/iphoneos
+      - name: Build iOS IPA (No Codesign)
+        # This command builds the IPA without requiring a signing certificate.
+        # It's useful for distribution to internal testers or for CI/CD pipelines
+        # where signing happens later or is handled by another system.
+        run: flutter build ipa --no-codesign --release
+        # If your Flutter project is not in the root, uncomment and adjust the line below:
+        # working-directory: ./your_flutter_app_directory
 
-      - name: Zip output
-        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
-        working-directory: build/ios/iphoneos
+      - name: Find IPA file
+        id: find_ipa
+        run: |
+          # The 'flutter build ipa' command typically places the IPA in build/ios/ipa/
+          # We need to find the exact path as the filename might include version numbers.
+          IPA_PATH=$(find build/ios/ipa -name "*.ipa" -print -quit)
+          if [ -z "$IPA_PATH" ]; then
+            echo "Error: IPA file not found!"
+            exit 1
+          fi
+          echo "Found IPA at: $IPA_PATH"
+          echo "IPA_PATH=$IPA_PATH" >> $GITHUB_OUTPUT
 
-      - name: Upload IPA as artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: FlutterIpaExport
-          path: build/ios/iphoneos/FlutterIpaExport.ipa
+          name: flutter-ios-ipa
+          path: ${{ steps.find_ipa.outputs.IPA_PATH }}
+          retention-days: 7 # How long to keep the artifact (optional)
